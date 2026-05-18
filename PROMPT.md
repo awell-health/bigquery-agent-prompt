@@ -86,7 +86,7 @@ table: activities
 | orchestrated_step_id      | STRING    | NULLABLE   | Unique identifier of the orchestrated step associated with the activity. Present only for objects within a step (actions, etc.). |
 | action_definition_id      | STRING    | NULLABLE   | Identifier of the action definition from which this action was instantiated. |
 | action_component_name     | STRING    | NULLABLE   | Component holding the primary object (e.g., form, message, calculation). |
-| object_type               | STRING    | NULLABLE   | Type of primary object this activity relates to. Example values: action, api_call, calculation, form, message, pathway, plugin_action, reminder, step, track. |
+| object_type               | STRING    | NULLABLE   | Type of primary object this activity relates to. Example values: action, api_call, calculation, form, message, checklist, clinical_note, evaluated_rule,emr_report, enrollment_trigger, logic, track_trigger, timer, timer_completion, pathway, plugin_action, reminder, step, track. |
 | object_name               | STRING    | NULLABLE   | Name of the primary object associated with the activity. |
 | object_id                 | STRING    | NULLABLE   | ID of the primary object. |
 | indirect_object_type      | STRING    | NULLABLE   | Type of secondary object (e.g., `patient`, `stakeholder`, `plugin`). |
@@ -297,6 +297,62 @@ table: tracks
 | duration_in_seconds      | FLOAT     | NULLABLE   | Duration of the track in seconds. |
 | status                   | STRING    | NULLABLE   | Current status of the track. Possible values: `active`, `completed`, `stopped`, `deleted`, or other statuses derived from actions. |
 | last_synced_at           | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Last time the record was synced. |
+
+## Graph nodes and edges
+
+The `graph_nodes__snapshot` and `graph_edges__snapshot` tables together form a directed graph representing the structure and execution state of a care flow. Nodes represent the individual units of work (tracks, steps, actions, timers, etc.) and edges represent the transitions and dependencies between them. These tables can be used to understand the full orchestration topology of a care flow and the current state of each node and edge within it.
+
+### Graph nodes
+
+table: graph_nodes__snapshot
+
+| Field name              | Type      | Mode      | Description |
+|--------------------------|-----------|------------|--------------|
+| id                       | STRING    | NULLABLE   | Unique identifier of the graph node. |
+| action                   | STRING    | NULLABLE   | The action performed on this node (e.g., `added`, `activate`, `complete`, `stopped`, `discarded`). |
+| care_flow_id             | STRING    | NULLABLE   | Identifier of the care flow this node belongs to. Refers to the `id` column in the `care_flows` table. |
+| care_flow_definition_id  | STRING    | NULLABLE   | Identifier of the care flow definition from which the care flow was instantiated. |
+| status                   | STRING    | NULLABLE   | Current status of the node. One of: `pending` (unknown future), `scheduled` (known future), `active` (present), `done` (past), `discarded` (conditional rule not satisfied), `postponed` (activation deferred due to other pending paths), `stopped` (manually stopped by user). |
+| date                     | TIMESTAMP | NULLABLE   | Timestamp of the node event (UTC). |
+| completed_at             | TIMESTAMP | NULLABLE   | Timestamp when the node was completed (UTC). |
+| definition_id            | STRING    | NULLABLE   | Identifier of the definition (template) from which this node was instantiated. |
+| definition_node_id       | STRING    | NULLABLE   | Identifier of the node within the care flow definition graph. |
+| release_id               | STRING    | NULLABLE   | An internal identifier for the published version of the care flow definition. Refers to the `release_id` in the `published_careflows` table. |
+| definition_type          | STRING    | NULLABLE   | Type of the definition this node represents. One of: `pathway`, `track`, `step`, `action`, `void`, `timer`, `logic`. |
+| name                     | STRING    | NULLABLE   | Name of the node. |
+| node_type                | STRING    | NULLABLE   | Structural role of the node in the graph. One of: `default`, `start`, `end`. |
+| track_definition_id      | STRING    | NULLABLE   | Identifier of the track definition this node belongs to. |
+| orchestrated_instance_id | STRING    | NULLABLE   | Unique identifier of the orchestrated instance (action, step, or track). Can be used to join with `actions`, `steps`, and `tracks` tables using the `id` field. |
+| orchestrated_track_id    | STRING    | NULLABLE   | Unique identifier of the orchestrated track associated with this node. Present only for nodes within a track. |
+| orchestrated_step_id     | STRING    | NULLABLE   | Unique identifier of the orchestrated step associated with this node. Present only for nodes within a step. |
+| last_synced_at           | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
+| message_id               | STRING    | NULLABLE   | Identifier of the message associated with this node, if any. |
+| rank                     | INTEGER   | NULLABLE   | Ordering rank of the node within its parent context. |
+
+### Graph edges
+
+table: graph_edges__snapshot
+
+| Field name                | Type      | Mode      | Description |
+|----------------------------|-----------|------------|--------------|
+| id                         | STRING    | NULLABLE   | Unique identifier of the graph edge. |
+| action                     | STRING    | NULLABLE   | The action performed on this edge (e.g., `added`, `activate`, `discarded`). |
+| care_flow_id               | STRING    | NULLABLE   | Identifier of the care flow this edge belongs to. Refers to the `id` column in the `care_flows` table. |
+| care_flow_definition_id    | STRING    | NULLABLE   | Identifier of the care flow definition from which the care flow was instantiated. |
+| status                     | STRING    | NULLABLE   | Current status of the edge. One of: `pending` (rule not yet evaluated), `activated` (rule satisfied, timing computed), `discarded` (rule not satisfied), `waiting` (added but awaiting explicit scheduling), `stopped` (origin node manually stopped). |
+| release_id                 | STRING    | NULLABLE   | An internal identifier for the published version of the care flow definition. Refers to the `release_id` in the `published_careflows` table. |
+| rule_definition_id         | STRING    | NULLABLE   | Identifier of the rule definition governing this edge's conditional evaluation. |
+| timing_definition_id       | STRING    | NULLABLE   | Identifier of the timing definition controlling when this edge activates. |
+| transition_definition_id   | STRING    | NULLABLE   | Identifier of the transition definition describing the edge in the care flow design. |
+| type                       | STRING    | NULLABLE   | Type of the edge. One of: `legacy`, `plain`. |
+| outcome                    | STRING    | NULLABLE   | Outcome of the edge evaluation (e.g., whether the rule was satisfied). |
+| from_node_id               | STRING    | NULLABLE   | Identifier of the source graph node. Refers to `id` in the `graph_nodes__snapshot` table. |
+| to_node_id                 | STRING    | NULLABLE   | Identifier of the destination graph node. Refers to `id` in the `graph_nodes__snapshot` table. |
+| from_instance_id           | STRING    | NULLABLE   | Orchestrated instance identifier of the source node. Can be used to join with `actions`, `steps`, or `tracks` tables. |
+| to_instance_id             | STRING    | NULLABLE   | Orchestrated instance identifier of the destination node. Can be used to join with `actions`, `steps`, or `tracks` tables. |
+| last_synced_at             | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
+| message_id                 | STRING    | NULLABLE   | Identifier of the message associated with this edge, if any. |
+| rank                       | INTEGER   | NULLABLE   | Ordering rank of the edge within its parent context. |
 
 # Common patterns
 
