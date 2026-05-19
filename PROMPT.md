@@ -356,6 +356,61 @@ table: graph_edges__snapshot
 
 # Common patterns
 
+## Timer lifecycle and detecting scheduled vs. fired timers
+
+Awell models timers across two activity rows that succeed each other. Understanding this is required for any query that needs to know whether a timer is currently waiting, or whether it has fired.
+
+### Lifecycle
+
+1. **Timer scheduled (waiting)** — a single row is created:
+   - `object_type = 'timer'`
+   - `action = 'activate'`
+   - `status = 'active'`
+
+2. **Timer fires** — on the fire date, two things happen:
+   - The existing timer row flips to `status = 'done'` (and typically `resolution = 'success'`).
+   - A new row is appended:
+     - `object_type = 'timer_completion'`
+     - `action = 'processed'`
+     - `status = 'done'`
+
+### Detecting the two states
+
+Use a single object_type / action / status combo per signal — do not combine `timer` and `timer_completion` to detect "fired", as that double-counts.
+
+- **Timer scheduled (still waiting):** `object_type = 'timer' AND action = 'activate' AND status = 'active'`
+- **Timer fired:** `object_type = 'timer_completion' AND action = 'processed' AND status = 'done'`
+
+### Scoping to a specific timer
+
+A care flow can contain many timers across different tracks. Always scope timer-lifecycle queries to the specific track (or step) you care about, using `track_name`. Filtering only by `object_type` returns every timer in the care flow and is almost never what you want.
+
+### Example: per care flow, has the timer on track X been scheduled or fired?
+
+```sql
+SELECT
+  care_flow_id,
+  COUNTIF(
+    object_type = 'timer'
+    AND action = 'activate'
+    AND status = 'active'
+  ) AS timer_scheduled_count,
+  COUNTIF(
+    object_type = 'timer_completion'
+    AND action = 'processed'
+    AND status = 'done'
+  ) AS timer_fired_count
+FROM `awell-production-us.{customer}.activities`
+WHERE track_name = '{exact track name}'
+GROUP BY care_flow_id
+```
+
+### Caveats
+
+- `resolution` on `timer_completion` rows is unreliable today — many fired timers show no resolution despite firing successfully. Don't filter on `resolution`.
+- `sub_activities` on a `timer` row will be empty (`[]`) while the timer is active — the fire time inside it is not pushed to BigQuery until the timer fires. Don't rely on `sub_activities` to read the fire time of a waiting timer.
+- `scheduled_date` on a `timer` activity row is the timestamp at which the activity row itself was created — not the timer's fire time. The two are typically milliseconds apart.
+
 ## Fetching a data point value
 
 Data points can be collected multiple times so usually you want to grab the last / most recent value.
