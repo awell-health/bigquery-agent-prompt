@@ -205,6 +205,8 @@ table: patients
 
 ## Patient profiles
 
+> **Deprecated (2026-06-07).** Patient profile and identifier data is now stored in the `patient_data` / `patient_data_latest` tables (see the **Patient data** section below). The `patient_profiles` table remains available for backward compatibility, but new queries should use `patient_data_latest`.
+
 table: patient_profiles
 
 | Field name               | Type      | Mode      | Description |
@@ -229,6 +231,43 @@ table: patient_profiles
 | last_synced_at            | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of last sync. |
 | status                    | STRING    | NULLABLE   | Current status of the patient profile (e.g., `active`, `archived`). |
 | identifiers               | JSON      | REPEATED   | Array of patient identifiers associated to the patient. You can use this to facilitate the reconciliation of patient records between Awell and your domain. Each identifier is an object with `system` and `value` fields. |
+
+## Patient data
+
+tables: patient_data (full audited history) and patient_data_latest (current value per field)
+
+These tables supersede the deprecated `patient_profiles` table. They hold patient profile fields and identifiers as individual, append-only, provenance-carrying values. `patient_data` keeps every version (one row per change); `patient_data_latest` exposes the current value per field. Both share the same schema.
+
+A "field" is identified by `data_point_definition_id`:
+- `patient_profile:<field>` — a profile field, e.g. `patient_profile:email`, `patient_profile:first_name` (the `key` column holds the bare field name, e.g. `email`, and `data_source_id` is `patient_profile`).
+- `patient_identifier:<system>` — one row per identifier system (the `key` column holds the system, and `data_source_id` is `patient_identifier`).
+
+| Field name                | Type      | Mode      | Description |
+|----------------------------|-----------|------------|--------------|
+| id                         | STRING    | NULLABLE   | Unique identifier of this value version (one row per change). Use `data_point_definition_id` to identify the field. |
+| patient_id                 | STRING    | NULLABLE   | Identifier of the patient. Foreign key to the `id` column in the `patients` table. |
+| data_point_definition_id   | STRING    | NULLABLE   | Stable identifier of the field: `patient_profile:<field>` (e.g. `patient_profile:email`) or `patient_identifier:<system>`. |
+| data_source_id             | STRING    | NULLABLE   | Source bucket of the field: `patient_profile` or `patient_identifier`. |
+| key                        | STRING    | NULLABLE   | Human-readable field key (e.g. `email`, `first_name`), or the identifier system for identifiers. |
+| label                      | STRING    | NULLABLE   | Descriptive label associated with the value. |
+| value_type                 | STRING    | NULLABLE   | Primitive type of the value before serialization (`boolean`, `date`, `number`, `string`, ...). |
+| value_raw                  | STRING    | NULLABLE   | Serialized value of the data point. Prefer the type-dedicated columns below. |
+| value_boolean              | BOOL      | NULLABLE   | Typed value, populated only when `value_type` is `boolean`. |
+| value_numeric              | NUMERIC   | NULLABLE   | Typed value, populated only when `value_type` is `number`. |
+| value_date                 | TIMESTAMP | NULLABLE   | Typed value, populated only when `value_type` is `date`. |
+| value_json                 | JSON      | NULLABLE   | JSON value of the data point. |
+| provenance_method          | STRING    | NULLABLE   | How the value came to exist: `manual` (a human), `integration` (external system of record), `migration`, `import`, `form`, `calculation`, etc. |
+| provenance_actor           | STRING    | NULLABLE   | The user or service account that produced the value, when applicable. |
+| provenance_collected_at    | TIMESTAMP | NULLABLE   | When the value was produced / collected (UTC). |
+| provenance_careflow_id     | STRING    | NULLABLE   | Care flow that produced the value, when applicable. |
+| provenance_track_id        | STRING    | NULLABLE   | Track that produced the value, when applicable. |
+| provenance_step_id         | STRING    | NULLABLE   | Step that produced the value, when applicable. |
+| provenance_activity_id     | STRING    | NULLABLE   | Activity that produced the value, when applicable. |
+| provenance_ingestion_id    | STRING    | NULLABLE   | Data-ingestion processing / record id, when `provenance_method` is `import`. |
+| provenance_json            | JSON      | NULLABLE   | The full provenance object as JSON. |
+| date                       | TIMESTAMP | NULLABLE   | When this value version was written (UTC). Orders the change history of a field. |
+| last_synced_at             | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
+| status                     | STRING    | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Always `created`; the store is append-only. |
 
 ## Published care flows
 
@@ -482,5 +521,48 @@ LEFT JOIN
   diagnosis
 ON
   care_flow.id = diagnosis.care_flow_id
+```
+
+## Reading patient profile fields & identifiers
+
+Patient profile fields and identifiers live in `patient_data` (full history) and `patient_data_latest` (current value per field), keyed by `data_point_definition_id`. Use `patient_data_latest` when you want "what is this patient's current value", and distinguish profile fields from identifiers with `data_source_id`.
+
+Current value of specific profile fields for one patient:
+
+```sql
+SELECT
+  patient_id,
+  key,
+  value_raw
+FROM `awell-production.{customer}.patient_data_latest`
+WHERE patient_id = '{patient_id}'
+  AND data_source_id = 'patient_profile'
+  AND key IN ('first_name', 'last_name', 'email')
+```
+
+Pivot the latest profile into one row per patient:
+
+```sql
+SELECT
+  patient_id,
+  MAX(IF(key = 'first_name', value_raw, NULL)) AS first_name,
+  MAX(IF(key = 'last_name',  value_raw, NULL)) AS last_name,
+  MAX(IF(key = 'email',      value_raw, NULL)) AS email
+FROM `awell-production.{customer}.patient_data_latest`
+WHERE data_source_id = 'patient_profile'
+GROUP BY patient_id
+```
+
+Look up a patient by an external identifier (e.g. an MRN system):
+
+```sql
+SELECT
+  patient_id,
+  key AS identifier_system,
+  value_raw AS identifier_value
+FROM `awell-production.{customer}.patient_data_latest`
+WHERE data_source_id = 'patient_identifier'
+  AND key = '{identifier_system}'
+  AND value_raw = '{identifier_value}'
 ```
 
