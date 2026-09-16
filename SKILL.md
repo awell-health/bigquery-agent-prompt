@@ -34,9 +34,11 @@ worked query patterns live in **`PROMPT.md`** next to this file.
 - **"What happened in this care flow / what did node X produce" → for a v2
   care flow use `careflow_events` (timeline, one row per lifecycle moment) and
   `careflow_data` (one row per producer completion, `outputs` as a JSON array).**
-  A care flow with no `careflow_events` rows is legacy: fall back to
-  `activities`. A patient's clinical moments across care flows live in
-  `patient_events`. See "Fetching information about a care flow" in `PROMPT.md`.
+  Both tables exist only for v2 care flows, which is how to tell v2 from
+  legacy; `activities` exists for every care flow, v2 included, and is the only
+  lifecycle source for legacy ones. A patient's clinical moments across care
+  flows live in `patient_events`. See "Fetching information about a care flow"
+  in `PROMPT.md`.
 
 ## Tables at a glance
 

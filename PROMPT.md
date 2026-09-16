@@ -132,7 +132,7 @@ The event log of a care flow run: one row per lifecycle moment the engine record
 | `decision.started` / `decision.evaluated` | A decision (logic) node activated / evaluated; `payload_outcome` carries the outcome. |
 | `milestone.reached` | An author-placed milestone was reached. |
 
-Legacy care flows do not appear here (they record lifecycle moments as data points); if a care flow has no rows, fall back to `activities`.
+Legacy care flows do not appear here (they record lifecycle moments as data points). `activities` still exists for every care flow, v2 included — every action is still an activity — so this table adds the lifecycle moments beside it rather than replacing it.
 
 | Field name                  | Type      | Mode      | Description |
 |-----------------------------|-----------|-----------|-------------|
@@ -555,7 +555,7 @@ GROUP BY care_flow_id
 
 ## Fetching information about a care flow (v2 care flows)
 
-For a care flow built in the new Studio (a "v2" care flow), three tables tell its story, and they are preferable to reconstructing it from `activities`:
+For a care flow built in the new Studio (a "v2" care flow), three tables tell its story beside `activities` (which still exists for every care flow, v2 included). Prefer them over reconstructing lifecycle moments or node outputs from `activities`:
 
 | Question | Table | Key |
 |---|---|---|
@@ -563,7 +563,7 @@ For a care flow built in the new Studio (a "v2" care flow), three tables tell it
 | What did each form / decision / calculation / API call produce? | `careflow_data` | latest row per (`care_flow_id`, `node_id`) |
 | What clinical moments does the patient have, across care flows? | `patient_events` | `patient_id`, ordered by `occurred_at` |
 
-How to tell: a care flow with rows in `careflow_events` is a v2 care flow. A care flow with none is legacy — use `activities` (and the timer-lifecycle heuristics above) instead.
+How to tell: `careflow_events` and `careflow_data` exist only for v2 care flows, so a care flow with rows in either is v2; a care flow with none is legacy, and for legacy the lifecycle moments have to come from `activities` (and the timer-lifecycle heuristics above). `activities` itself is present for both.
 
 ### Example: the timeline of one care flow
 
