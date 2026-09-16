@@ -117,6 +117,76 @@ table: care_flows
 | created_by_user_id   | STRING    | NULLABLE   | Identifier of the user who created the care flow instance. |
 | last_synced_at       | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
 
+## Care flow events
+
+table: careflow_events (v2 care flows only)
+
+The event log of a care flow run: one row per lifecycle moment the engine recorded on a node the author drew (the care flow, its tracks, steps, timers, decisions and milestones). This is the first place to look for "when did X happen in this care flow" — it replaces reconstructing moments from `activities`, `care_flows` or lifecycle data points. `event_type` is `<subject>.<moment>` from a **closed** vocabulary:
+
+| event_type | Meaning |
+|---|---|
+| `careflow.started` / `careflow.completed` / `careflow.stopped` | The run began / reached its intended outcome / was abandoned. Completed and stopped carry `cause_*` (why and by whom). |
+| `track.started` / `track.completed` | A track activated / completed. Looped tracks: started on the first iteration only, completed at loop exit only. |
+| `step.started` / `step.completed` | A step activated / all its activities resolved. |
+| `timer.started` / `timer.fired` | A timer began waiting / its wait ended. |
+| `decision.started` / `decision.evaluated` | A decision (logic) node activated / evaluated; `payload_outcome` carries the outcome. |
+| `milestone.reached` | An author-placed milestone was reached. |
+
+Legacy care flows do not appear here (they record lifecycle moments as data points); if a care flow has no rows, fall back to `activities`.
+
+| Field name                  | Type      | Mode      | Description |
+|-----------------------------|-----------|-----------|-------------|
+| id                          | STRING    | NULLABLE  | Unique identifier of the event (one row per recorded moment; the store is append-only). |
+| care_flow_id                | STRING    | NULLABLE  | The care flow the event belongs to. Foreign key to `care_flows.id`. |
+| care_flow_definition_id     | STRING    | NULLABLE  | The care flow definition. Refers to `definition_id` in `care_flows` / `published_careflows`. |
+| release_id                  | STRING    | NULLABLE  | The published release the care flow runs on. Refers to `published_careflows.release_id`. |
+| event_type                  | STRING    | NULLABLE  | The moment, as `<subject>.<moment>` (see the table above). |
+| subject_type                | STRING    | NULLABLE  | The kind of node: `careflow`, `track`, `step`, `timer`, `decision` or `milestone`. |
+| subject_definition_id       | STRING    | NULLABLE  | The node's definition identifier, stable across every care flow instantiated from the same release. Matches `tracks.definition_id` / `steps.definition_id` for tracks and steps. |
+| subject_node_id             | STRING    | NULLABLE  | The navigation-graph node instance that produced the moment, when available. |
+| subject_label               | STRING    | NULLABLE  | Human-readable name of the node (track / step / timer / decision / milestone title, or the care flow title). Display only. |
+| occurred_at                 | TIMESTAMP | NULLABLE  | When the moment happened (UTC). Use this for timelines and durations. |
+| recorded_at                 | TIMESTAMP | NULLABLE  | When the store persisted the event (UTC). |
+| activity_id                 | STRING    | NULLABLE  | The activity whose execution produced the moment, when applicable. Foreign key to `activities.id`. |
+| session_id                  | STRING    | NULLABLE  | Hosted-pages session, when applicable. Foreign key to `hosted_sessions.id`. |
+| cause_initiated_by          | STRING    | NULLABLE  | For `careflow.completed` / `careflow.stopped`: `eligibility`, `trigger` or `manual`. NULL otherwise. |
+| cause_trigger_definition_id | STRING    | NULLABLE  | The completion trigger that fired, when `cause_initiated_by = 'trigger'`. |
+| cause_actor_id              | STRING    | NULLABLE  | Who completed / stopped the care flow, when `cause_initiated_by = 'manual'`. |
+| cause_actor_name            | STRING    | NULLABLE  | Display name of that actor, when known. |
+| cause_reason                | STRING    | NULLABLE  | Free-text reason for a manual completion / stop. |
+| cause_json                  | JSON      | NULLABLE  | The full cause object. NULL when the event has no explicit initiator. |
+| payload_iteration           | INT64     | NULLABLE  | For looped-track moments, the loop iteration. NULL otherwise. |
+| payload_outcome             | JSON      | NULLABLE  | For `decision.evaluated`, the outcome, e.g. `{"matched": true, "matched_rule_ids": ["r_other"]}`. |
+| payload_json                | JSON      | NULLABLE  | The full payload object. NULL when the event carries none. |
+| status                      | STRING    | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Always `created`; the store is append-only. |
+| last_synced_at              | TIMESTAMP | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
+
+## Care flow data
+
+table: careflow_data (v2 care flows only)
+
+The data a care flow produces: every time a form, decision, code block, API call, calculation or extension action completes, ONE row captures that producer's full set of outputs, keyed by the producing node (`node_id`). The store is append-only and scoped to the care flow instance, so the latest row per (`care_flow_id`, `node_id`) is the node's current output, and a re-enrolled patient never inherits an earlier run's values. Outputs the author bound to the patient record are also written to `patient_data`; this table is the complete record of what each node produced.
+
+`outputs` is a JSON array with one element per output value. Each element has `data_point_definition_id`, `key`, `label`, `valueType`, `value`, `date` and, when bound to the patient record, `data_source_id`. Unnest it with `JSON_QUERY_ARRAY(outputs)` (see the query patterns below). Legacy care flows write `data_points` instead and do not appear here.
+
+| Field name              | Type      | Mode      | Description |
+|-------------------------|-----------|-----------|-------------|
+| id                      | STRING    | NULLABLE  | Unique identifier of the record (one row per producer completion; the store is append-only). |
+| care_flow_id            | STRING    | NULLABLE  | The care flow the record belongs to. Foreign key to `care_flows.id`. |
+| care_flow_definition_id | STRING    | NULLABLE  | The care flow definition. Refers to `definition_id` in `care_flows` / `published_careflows`. |
+| release_id              | STRING    | NULLABLE  | The published release the care flow runs on. |
+| node_id                 | STRING    | NULLABLE  | Definition identifier of the producing component (the form, decision, calculation, API call or extension action the author drew). Stable across every care flow instantiated from the same release. |
+| output_type             | STRING    | NULLABLE  | Which kind of producer wrote the record: `form`, `decision`, `code`, `api_call`, `calculation`, `extension` or `agent`. |
+| outputs                 | JSON      | NULLABLE  | JSON array of the producer's output values (one element per output — see above). |
+| output_count            | INT64     | NULLABLE  | Number of elements in `outputs`. |
+| activity_output         | JSON      | NULLABLE  | The structured activity output the producer had in scope (e.g. the form response, the API-call response). NULL when none. |
+| occurred_at             | TIMESTAMP | NULLABLE  | When the producer completed (UTC). The latest row per (`care_flow_id`, `node_id`) is the current output. |
+| recorded_at             | TIMESTAMP | NULLABLE  | When the store persisted the record (UTC). |
+| activity_id             | STRING    | NULLABLE  | The activity whose completion produced the outputs. Foreign key to `activities.id`. |
+| session_id              | STRING    | NULLABLE  | Hosted-pages session, when applicable. Foreign key to `hosted_sessions.id`. |
+| status                  | STRING    | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Always `created`; the store is append-only. |
+| last_synced_at          | TIMESTAMP | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
+
 ## Data point definitions
 
 table: data_point_definitions
@@ -268,6 +338,39 @@ A "field" is identified by `data_point_definition_id`:
 | date                       | TIMESTAMP | NULLABLE   | When this value version was written (UTC). Orders the change history of a field. |
 | last_synced_at             | TIMESTAMP | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
 | status                     | STRING    | NULLABLE   | [IRRELEVANT FOR ANALYSIS] Always `created`; the store is append-only. |
+
+## Patient events
+
+table: patient_events
+
+Clinical moments recorded for a patient — "appointment booked", "care gap flagged", a care-flow milestone reached — the events counterpart of `patient_data`. Where `careflow_events` is scoped to one care flow run and uses a closed vocabulary, patient events belong to the **patient** across care flows and use an **open** domain vocabulary: `event_type` = `<subject_type>.<moment>` (e.g. `appointment.booked`, `care_gap.flagged`, or a milestone's stable key). Every row carries its provenance (how, when and by whom it was produced). A patient deletion appears as one `status = 'deleted'` tombstone row keyed by the patient id, with no `event_type`; filter `status = 'created'` for events.
+
+| Field name                     | Type      | Mode      | Description |
+|--------------------------------|-----------|-----------|-------------|
+| id                             | STRING    | NULLABLE  | Unique identifier of the event (one row per recorded moment). For a deletion tombstone this is the patient id. |
+| patient_id                     | STRING    | NULLABLE  | The patient the event belongs to. Foreign key to `patients.id`. |
+| event_type                     | STRING    | NULLABLE  | The moment, as `<subject_type>.<moment>`. Open vocabulary defined by the producers. NULL on a tombstone row. |
+| subject_type                   | STRING    | NULLABLE  | The kind of domain thing the event is a state change of (e.g. `appointment`, `care_gap`). |
+| subject_definition_id          | STRING    | NULLABLE  | The subject's stable definition identifier, when the producer had one (e.g. the milestone or event definition id). |
+| subject_label                  | STRING    | NULLABLE  | Human-readable subject name, when known. Display only. |
+| occurred_at                    | TIMESTAMP | NULLABLE  | When the moment happened (UTC) — the clinical time. Orders a patient's timeline. |
+| recorded_at                    | TIMESTAMP | NULLABLE  | When the store persisted the event (UTC). |
+| data_source_id                 | STRING    | NULLABLE  | The data source (bucket) the event belongs to, when the producer assigned one. |
+| care_flow_id                   | STRING    | NULLABLE  | The care flow that produced the event (e.g. a milestone), when applicable. Foreign key to `care_flows.id`. NULL for events from ingestion or an external system of record. |
+| release_id                     | STRING    | NULLABLE  | The published release of the producing care flow, when applicable. |
+| provenance_method              | STRING    | NULLABLE  | How the event came to exist: `lifecycle` (a care-flow milestone), `ingestion` (a data-ingestion endpoint), `manual`, `integration`, etc. |
+| provenance_actor               | STRING    | NULLABLE  | The user / service account that produced the event, when applicable. |
+| provenance_collected_at        | TIMESTAMP | NULLABLE  | When the producer collected the event (UTC). |
+| provenance_careflow_id         | STRING    | NULLABLE  | Care flow that produced the event, when applicable. |
+| provenance_track_id            | STRING    | NULLABLE  | Track (definition) that produced the event, when applicable. |
+| provenance_step_id             | STRING    | NULLABLE  | Step (definition) that produced the event, when applicable. |
+| provenance_activity_id         | STRING    | NULLABLE  | Activity that produced the event, when applicable. Foreign key to `activities.id`. |
+| provenance_ingestion_id        | STRING    | NULLABLE  | Data-ingestion processing id, when the method is `ingestion` or `import`. |
+| provenance_ingestion_record_id | STRING    | NULLABLE  | The ingested record the event was committed from, when the method is `ingestion`. |
+| provenance_json                | JSON      | NULLABLE  | The full provenance object. |
+| payload                        | JSON      | NULLABLE  | Moment-specific facts that are part of the event itself. NULL when none. |
+| status                         | STRING    | NULLABLE  | `created` for an event; `deleted` for the single tombstone row written when the patient was deleted. |
+| last_synced_at                 | TIMESTAMP | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
 
 ## Published care flows
 
@@ -449,6 +552,103 @@ GROUP BY care_flow_id
 - `resolution` on `timer_completion` rows is unreliable today — many fired timers show no resolution despite firing successfully. Don't filter on `resolution`.
 - `sub_activities` on a `timer` row will be empty (`[]`) while the timer is active — the fire time inside it is not pushed to BigQuery until the timer fires. Don't rely on `sub_activities` to read the fire time of a waiting timer.
 - `scheduled_date` on a `timer` activity row is the timestamp at which the activity row itself was created — not the timer's fire time. The two are typically milliseconds apart.
+
+## Fetching information about a care flow (v2 care flows)
+
+For a care flow built in the new Studio (a "v2" care flow), three tables tell its story, and they are preferable to reconstructing it from `activities`:
+
+| Question | Table | Key |
+|---|---|---|
+| What happened, and when? | `careflow_events` | `care_flow_id`, ordered by `occurred_at` |
+| What did each form / decision / calculation / API call produce? | `careflow_data` | latest row per (`care_flow_id`, `node_id`) |
+| What clinical moments does the patient have, across care flows? | `patient_events` | `patient_id`, ordered by `occurred_at` |
+
+How to tell: a care flow with rows in `careflow_events` is a v2 care flow. A care flow with none is legacy — use `activities` (and the timer-lifecycle heuristics above) instead.
+
+### Example: the timeline of one care flow
+
+```sql
+SELECT
+  occurred_at,
+  event_type,
+  subject_type,
+  subject_label,
+  cause_initiated_by,
+  payload_outcome
+FROM `awell-production.{customer}.careflow_events`
+WHERE care_flow_id = '{care_flow_id}'
+ORDER BY occurred_at
+```
+
+### Example: time from care flow start to completion, per care flow definition
+
+```sql
+SELECT
+  care_flow_definition_id,
+  COUNT(*) AS completed_runs,
+  AVG(TIMESTAMP_DIFF(completed_at, started_at, HOUR)) AS avg_hours_to_complete
+FROM (
+  SELECT
+    care_flow_id,
+    ANY_VALUE(care_flow_definition_id) AS care_flow_definition_id,
+    MIN(IF(event_type = 'careflow.started', occurred_at, NULL)) AS started_at,
+    MIN(IF(event_type = 'careflow.completed', occurred_at, NULL)) AS completed_at
+  FROM `awell-production.{customer}.careflow_events`
+  GROUP BY care_flow_id
+)
+WHERE completed_at IS NOT NULL
+GROUP BY care_flow_definition_id
+```
+
+### Example: has the timer on a v2 care flow fired? (prefer this over the `activities` heuristic)
+
+```sql
+SELECT
+  care_flow_id,
+  subject_label AS timer_name,
+  COUNTIF(event_type = 'timer.started') AS started_count,
+  COUNTIF(event_type = 'timer.fired') AS fired_count
+FROM `awell-production.{customer}.careflow_events`
+WHERE subject_type = 'timer'
+  AND subject_definition_id = '{timer_definition_id}'
+GROUP BY care_flow_id, subject_label
+```
+
+### Example: the latest outputs of every node in a care flow, one row per output value
+
+```sql
+SELECT
+  d.node_id,
+  d.output_type,
+  d.occurred_at,
+  JSON_VALUE(output, '$.key') AS output_key,
+  JSON_VALUE(output, '$.label') AS output_label,
+  JSON_VALUE(output, '$.valueType') AS value_type,
+  JSON_VALUE(output, '$.value') AS value,
+  JSON_VALUE(output, '$.data_point_definition_id') AS data_point_definition_id
+FROM `awell-production.{customer}.careflow_data` AS d,
+  UNNEST(JSON_QUERY_ARRAY(d.outputs)) AS output
+WHERE d.care_flow_id = '{care_flow_id}'
+QUALIFY ROW_NUMBER() OVER (PARTITION BY d.node_id ORDER BY d.occurred_at DESC) = 1
+ORDER BY d.occurred_at, output_key
+```
+
+`JSON_VALUE(output, '$.value')` returns a string for scalar values (numbers, booleans and dates are serialised); use `JSON_QUERY(output, '$.value')` for object or array values, and `SAFE_CAST` to type a scalar.
+
+### Example: a patient's clinical timeline across care flows
+
+```sql
+SELECT
+  occurred_at,
+  event_type,
+  subject_label,
+  care_flow_id,
+  provenance_method
+FROM `awell-production.{customer}.patient_events`
+WHERE patient_id = '{patient_id}'
+  AND status = 'created'
+ORDER BY occurred_at DESC
+```
 
 ## Fetching a data point value
 

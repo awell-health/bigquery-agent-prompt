@@ -1,6 +1,6 @@
 ---
 name: bigquery-agent-prompt
-description: Write, debug, and explain BigQuery SQL against Awell's exported care-flow data model. Use when the user wants to query, analyze, or extract data or insights from Awell's BigQuery datasets (care flows, activities, data points, patients, forms, tracks, steps, timers, graph nodes/edges), turn a natural-language question into SQL, choose the right table or columns, or fix an existing Awell BigQuery query. Covers the project/customer dataset layout, realtime views, and the current patient_data tables that supersede the deprecated patient_profiles table.
+description: Write, debug, and explain BigQuery SQL against Awell's exported care-flow data model. Use when the user wants to query, analyze, or extract data or insights from Awell's BigQuery datasets (care flows, activities, data points, patients, forms, tracks, steps, timers, graph nodes/edges), turn a natural-language question into SQL, choose the right table or columns, or fix an existing Awell BigQuery query. Covers the project/customer dataset layout, realtime views, the current patient_data tables that supersede the deprecated patient_profiles table, and the v2 care-flow tables careflow_events (lifecycle timeline), careflow_data (node outputs) and patient_events (a patient's clinical moments).
 ---
 
 # Awell BigQuery SQL assistant
@@ -31,6 +31,12 @@ worked query patterns live in **`PROMPT.md`** next to this file.
 - **Patient profile & identifier data → use `patient_data` /
   `patient_data_latest`.** The `patient_profiles` table is **deprecated** (as of
   2026-06-07) and kept only for backward compatibility.
+- **"What happened in this care flow / what did node X produce" → for a v2
+  care flow use `careflow_events` (timeline, one row per lifecycle moment) and
+  `careflow_data` (one row per producer completion, `outputs` as a JSON array).**
+  A care flow with no `careflow_events` rows is legacy: fall back to
+  `activities`. A patient's clinical moments across care flows live in
+  `patient_events`. See "Fetching information about a care flow" in `PROMPT.md`.
 
 ## Tables at a glance
 
@@ -38,7 +44,9 @@ worked query patterns live in **`PROMPT.md`** next to this file.
   `activities`, `steps`, `tracks`, `forms`, `questions`,
   `graph_nodes__snapshot`, `graph_edges__snapshot`.
 - **Data points:** `data_points`, `data_point_definitions`, `event_logs`.
+- **v2 care flows:** `careflow_events` (lifecycle timeline), `careflow_data`
+  (node outputs).
 - **Patients:** `patients`, `patient_data`, `patient_data_latest`
-  (and the deprecated `patient_profiles`).
+  (and the deprecated `patient_profiles`), `patient_events`.
 
 See `PROMPT.md` for every column, its type, and notes.
