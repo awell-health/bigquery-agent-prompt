@@ -187,6 +187,39 @@ The data a care flow produces: every time a form, decision, code block, API call
 | status                  | STRING    | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Always `created`; the store is append-only. |
 | last_synced_at          | TIMESTAMP | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
 
+## Condition evaluations
+
+table: condition_evaluations (v2 care flows only)
+
+Why every condition the engine evaluated did or did not fire. One row per evaluation of one condition tree, carrying the verdict, the reason behind it, and EVERY leaf that was tested — with no short-circuit, so the row is the whole evidence rather than the part that lost. This is the table for "why did this patient not enrol", and for the population version of it: "which criterion is blocking everybody".
+
+`surface` says which condition it was: `enrollment` (a care flow's start criteria — the only surface with no `care_flow_id`, because a refused enrolment never creates one), `trigger`, or `loop_exit` (a looped track's exit criterion). Decision tables and form `enableWhen` are evaluated by different machinery and do NOT appear here. Legacy care flows record `EvaluatedRule` internally and are absent entirely.
+
+Start from `skip_reason` and `decisive_data_point_ids`, which are the two columns that answer the usual question without unnesting anything. Open `leaves` when you need one patient's detail.
+
+`leaves` is a JSON array with one element per leaf tested, in tree order. Each element has `path` (its position in the tree, as dotted indices — `1.0` is the first child of the second group), `data_point_id`, `operator`, `satisfied`, `reason`, `decisive`, `value_type`, `value` (the patient's value as compared), `operand` (as authored) and `operand_value` (the resolved right-hand side). Unnest it with `JSON_QUERY_ARRAY(leaves)`.
+
+A leaf's `reason` is the half a boolean cannot carry: `compared` (we had the value and the comparison said no), `value_absent` (there was no record to compare), or a structural fault (the leaf cannot be evaluated as authored). `decisive` says whether that leaf actually determined the verdict — in a failed AND, usually just the one leaf that said no.
+
+Rows with `status = 'deleted'` are tombstones, not evaluations: one is written when the operational store swept a care flow (under the tenant's retention policy) or erased a patient, and `id` is that care flow or patient id rather than an evaluation id. Filter them out with `status = 'created'` unless you are specifically looking for them.
+
+| Field name              | Type      | Mode      | Description |
+|-------------------------|-----------|-----------|-------------|
+| id                      | STRING    | NULLABLE  | Unique identifier of the evaluation (one row per condition evaluated; the store is append-only). On a tombstone row this is the care flow id or patient id instead. |
+| patient_id              | STRING    | NULLABLE  | The patient the condition was evaluated for. Foreign key to `patients.id`. Always present, including for refused enrolments. |
+| care_flow_id            | STRING    | NULLABLE  | The care flow the condition belongs to. Foreign key to `care_flows.id`. NULL for `surface = 'enrollment'`. |
+| care_flow_definition_id | STRING    | NULLABLE  | The care flow definition whose condition this is. Refers to `definition_id` in `care_flows` / `published_careflows`. Present even at enrolment — it is a refused enrolment's only link to the care flow it was refused from. |
+| surface                 | STRING    | NULLABLE  | Which condition: `enrollment`, `trigger` or `loop_exit`. |
+| owner_id                | STRING    | NULLABLE  | Definition identifier of the component the condition belongs to (the start listener, trigger or looped track). Stable across every care flow instantiated from the same release. |
+| evaluated_at            | TIMESTAMP | NULLABLE  | When the condition was evaluated (UTC). The only time column — filter and sort on this. |
+| satisfied               | BOOL      | NULLABLE  | The verdict. TRUE means it fired: the patient enrolled, the trigger ran, the loop exited. |
+| skip_reason             | STRING    | NULLABLE  | Why it did not fire: `condition_not_met` (the patient's data says no), `data_missing` (a decisive leaf reads a data point with no record) or `condition_malformed` (a defect in how the condition was authored, not a fact about the patient). NULL when `satisfied` is TRUE. |
+| leaves                  | JSON      | NULLABLE  | JSON array of every leaf tested (one element per leaf — see above). |
+| leaf_count              | INT64     | NULLABLE  | Number of elements in `leaves`. Zero means no usable leaf at all; pair with `skip_reason = 'condition_malformed'`. |
+| decisive_data_point_ids | ARRAY<STRING> | REPEATED | The data points of the leaves that DETERMINED the verdict. Group by this to see what is holding a cohort back. |
+| status                  | STRING    | NULLABLE  | `created` for an evaluation; `deleted` for a sweep tombstone (see above). |
+| last_synced_at          | TIMESTAMP | NULLABLE  | [IRRELEVANT FOR ANALYSIS] Recorded timestamp of importing data to BigQuery. |
+
 ## Data point definitions
 
 table: data_point_definitions
@@ -649,6 +682,91 @@ WHERE patient_id = '{patient_id}'
   AND status = 'created'
 ORDER BY occurred_at DESC
 ```
+
+## Why a condition did not fire (v2 care flows)
+
+`condition_evaluations` is the table. Three questions come up, in rising order of detail, and each has a column that answers it without unnesting `leaves`.
+
+Always filter `status = 'created'` — the `deleted` rows are sweep tombstones, not evaluations.
+
+### Example: why did this patient not enrol?
+
+```sql
+SELECT
+  evaluated_at,
+  care_flow_definition_id,
+  satisfied,
+  skip_reason,
+  decisive_data_point_ids
+FROM `awell-production.{customer}.condition_evaluations`
+WHERE patient_id = '{patient_id}'
+  AND surface = 'enrollment'
+  AND status = 'created'
+ORDER BY evaluated_at DESC
+```
+
+`skip_reason` separates the three cases that a bare `false` cannot: `condition_not_met` is the patient genuinely not qualifying, `data_missing` is a criterion reading a data point nobody ever recorded for them, and `condition_malformed` is a defect in the care flow.
+
+### Example: which criterion is blocking enrolment across a cohort?
+
+`decisive_data_point_ids` holds only the leaves that determined the verdict, so unnesting it counts the actual blockers rather than every criterion that happened to be present.
+
+```sql
+SELECT
+  care_flow_definition_id,
+  blocker AS data_point_id,
+  skip_reason,
+  COUNT(*) AS refusals,
+  COUNT(DISTINCT patient_id) AS patients
+FROM `awell-production.{customer}.condition_evaluations`,
+  UNNEST(decisive_data_point_ids) AS blocker
+WHERE surface = 'enrollment'
+  AND satisfied = FALSE
+  AND status = 'created'
+  AND evaluated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+GROUP BY 1, 2, 3
+ORDER BY refusals DESC
+```
+
+A high `data_missing` count against one data point usually means an upstream integration is not writing it, not that patients do not qualify.
+
+### Example: what exactly was compared, for one evaluation?
+
+Open `leaves` when the summary columns are not enough. Every leaf is present, including the ones that passed.
+
+```sql
+SELECT
+  JSON_VALUE(leaf, '$.path') AS path,
+  JSON_VALUE(leaf, '$.data_point_id') AS data_point_id,
+  JSON_VALUE(leaf, '$.operator') AS operator,
+  JSON_VALUE(leaf, '$.value') AS patient_value,
+  JSON_VALUE(leaf, '$.operand_value') AS compared_against,
+  JSON_VALUE(leaf, '$.satisfied') AS satisfied,
+  JSON_VALUE(leaf, '$.reason') AS reason,
+  JSON_VALUE(leaf, '$.decisive') AS decisive
+FROM `awell-production.{customer}.condition_evaluations`,
+  UNNEST(JSON_QUERY_ARRAY(leaves)) AS leaf
+WHERE id = '{evaluation_id}'
+ORDER BY path
+```
+
+### Example: is a looped track never exiting?
+
+```sql
+SELECT
+  owner_id AS track_definition_id,
+  COUNT(*) AS evaluations,
+  COUNTIF(satisfied) AS exits,
+  COUNT(DISTINCT care_flow_id) AS care_flows
+FROM `awell-production.{customer}.condition_evaluations`
+WHERE surface = 'loop_exit'
+  AND status = 'created'
+  AND evaluated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+GROUP BY 1
+ORDER BY evaluations DESC
+```
+
+A track with many evaluations and no exits is looping without a reachable exit condition.
 
 ## Fetching a data point value
 
