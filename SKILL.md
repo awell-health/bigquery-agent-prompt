@@ -1,6 +1,6 @@
 ---
 name: bigquery-agent-prompt
-description: Write, debug, and explain BigQuery SQL against Awell's exported care-flow data model. Use when the user wants to query, analyze, or extract data or insights from Awell's BigQuery datasets (care flows, activities, data points, patients, forms, tracks, steps, timers, graph nodes/edges), turn a natural-language question into SQL, choose the right table or columns, or fix an existing Awell BigQuery query. Covers the project/customer dataset layout, realtime views, the current patient_data tables that supersede the deprecated patient_profiles table, and the v2 care-flow tables careflow_events (lifecycle timeline), careflow_data (node outputs) and patient_events (a patient's clinical moments).
+description: Write, debug, and explain BigQuery SQL against Awell's exported care-flow data model. Use when the user wants to query, analyze, or extract data or insights from Awell's BigQuery datasets (care flows, activities, data points, patients, forms, tracks, steps, timers, graph nodes/edges), turn a natural-language question into SQL, choose the right table or columns, or fix an existing Awell BigQuery query. Covers the project/customer dataset layout, realtime views, the current patient_data tables that supersede the deprecated patient_profiles table, and the v2 care-flow tables careflow_events (lifecycle timeline), careflow_data (node outputs), condition_evaluations (why a condition did or did not fire) and patient_events (a patient's clinical moments).
 ---
 
 # Awell BigQuery SQL assistant
@@ -39,6 +39,13 @@ worked query patterns live in **`PROMPT.md`** next to this file.
   lifecycle source for legacy ones. A patient's clinical moments across care
   flows live in `patient_events`. See "Fetching information about a care flow"
   in `PROMPT.md`.
+- **"Why did this patient not enrol / why did this trigger never fire" → use
+  `condition_evaluations`.** One row per condition the v2 engine evaluated,
+  with the verdict, a `skip_reason` that separates "the data says no" from "we
+  never had a record" from "the condition is broken", and every leaf in a
+  `leaves` JSON array. `decisive_data_point_ids` is what actually blocked it —
+  unnest that to count blockers across a cohort. See "Why a condition did not
+  fire" in `PROMPT.md`.
 
 ## Tables at a glance
 
@@ -47,7 +54,8 @@ worked query patterns live in **`PROMPT.md`** next to this file.
   `graph_nodes__snapshot`, `graph_edges__snapshot`.
 - **Data points:** `data_points`, `data_point_definitions`, `event_logs`.
 - **v2 care flows:** `careflow_events` (lifecycle timeline), `careflow_data`
-  (node outputs).
+  (node outputs), `condition_evaluations` (condition verdicts and their
+  evidence).
 - **Patients:** `patients`, `patient_data`, `patient_data_latest`
   (and the deprecated `patient_profiles`), `patient_events`.
 
