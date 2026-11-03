@@ -23,7 +23,7 @@ worked query patterns live in **`PROMPT.md`** next to this file.
 ## Core rules
 
 - **Table reference:** `` `{project}.{customer}.{table}` `` — e.g.
-  `` `awell-production.ecma.data_point_definitions` ``.
+  `` `awell-production.example_clinic.data_point_definitions` ``.
 - **Realtime views:** append `_realtime` to a table name *only* when the user
   explicitly needs near-real-time data — these are more resource-intensive.
 - **Data points are collected multiple times.** Usually take the latest value

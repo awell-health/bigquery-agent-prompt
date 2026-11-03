@@ -43,10 +43,10 @@ To query a table, combine both values following this structure: `{project}.{cust
 For example:
 ```sql
 SELECT *
-FROM `awell-production.ecma.data_point_definitions`
+FROM `awell-production.example_clinic.data_point_definitions`
 ```
 
-This selects all records from the data_point_definitions table in the ecma dataset (customer) within the awell-production project.
+This selects all records from the data_point_definitions table in the example_clinic dataset (customer) within the awell-production project.
 
 ## Realtime views
 
@@ -57,7 +57,7 @@ To query the realtime version of a table, simply append _realtime to the table n
 For example:
 ```sql
 SELECT *
-FROM `awell-production.zna.data_points_realtime`
+FROM `awell-production.example_clinic.data_points_realtime`
 ```
 
 Pattern: `{project}.{customer}.{table}_realtime`
