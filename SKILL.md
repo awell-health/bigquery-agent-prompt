@@ -28,6 +28,10 @@ worked query patterns live in **`PROMPT.md`** next to this file.
   explicitly needs near-real-time data — these are more resource-intensive.
 - **Data points are collected multiple times.** Usually take the latest value
   with `MAX_BY(value, date)`; see the worked example in `PROMPT.md`.
+- **Read as little patient data as the question needs.** These datasets hold
+  health data. Prefer aggregates (counts, averages, distributions) to
+  patient-level rows, don't select names, contact details or identifiers unless
+  the user asks for them, and put a `LIMIT` on exploratory queries.
 - **Patient profile & identifier data → use `patient_data` /
   `patient_data_latest`.** The `patient_profiles` table is **deprecated** (as of
   2026-06-07) and kept only for backward compatibility.
