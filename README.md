@@ -6,8 +6,8 @@ question about care flow data into SQL, run it if it can reach BigQuery, and
 explain the answer.
 
 The skill is two files: [`SKILL.md`](./SKILL.md) tells the agent when to use it
-and the rules that always apply, and [`PROMPT.md`](./PROMPT.md) describes every
-table and column, with worked queries. It holds no data.
+and the rules that always apply, and [`PROMPT.md`](./PROMPT.md) describes the
+tables and their columns, with worked queries. It holds no data.
 
 ---
 
@@ -29,8 +29,10 @@ table and column, with worked queries. It holds no data.
    [`bigquery-agent-prompt.zip`](https://github.com/awell-health/bigquery-agent-prompt/releases/latest/download/bigquery-agent-prompt.zip)
    from the latest release. Upload it as it is: the folder inside it must keep
    the skill's name.
-2. Check that code execution is on, under **Settings > Capabilities**. Skills
-   need it.
+2. Check that **Code execution and file creation** is on, under
+   **Settings > Capabilities**: skills need it. On a Team or Enterprise plan,
+   an owner controls it, and on Enterprise an owner also has to allow skills,
+   under **Organization settings > Plugins & skills**.
 3. Open **Customize > Skills**, select **+**, then **Create skill** and
    **Upload a skill**, and choose the ZIP.
 4. Turn the skill on in the list.
@@ -52,9 +54,10 @@ git clone https://github.com/awell-health/bigquery-agent-prompt ~/.claude/skills
 git clone https://github.com/awell-health/bigquery-agent-prompt .claude/skills/bigquery-agent-prompt
 ```
 
-`git pull` in that folder picks up later changes. If you already uploaded the
-skill on claude.ai, Claude Code signed in with the same Claude account (not an
-API key) loads it from there.
+`git pull` in that folder picks up later changes.
+
+If you uploaded the skill on claude.ai, skip the clone: a recent Claude Code,
+signed in with the same Claude account (not an API key), loads it from there.
 
 ---
 
@@ -98,8 +101,8 @@ to ask:
 - *"How many patients completed the post-operative follow-up care flow in the
   last 90 days, and how long did it take them, on average?"*
 - *"Which forms do patients leave open the longest before completing them?"*
-- *"What's the latest recorded weight for each patient in the weight
-  management care flow?"*
+- *"What share of patients in the weight management care flow lost at least
+  5% of their first recorded weight?"*
 
 ---
 
@@ -107,11 +110,17 @@ to ask:
 
 - The skill is instructions and a description of the tables. It contains no
   data and sends nothing to Awell.
-- The agent's queries run with the access you give it. Read access is enough:
-  use a Google account or service account that can only read.
-- What the agent reads from a query result goes to its model provider, under
-  your organization's agreement with that provider. Check that the agreement
-  covers health data before you ask for patient-level rows.
+- The agent's queries run in BigQuery with the access you give it, and only
+  the rows a query returns reach the agent. The access Awell provisions, for
+  BigQuery Studio or as a read-only service account, is enough.
+- The skill tells the agent to read as little patient data as the question
+  needs: counts and averages rather than patient-level rows, no names,
+  contact details or identifiers unless you ask for them, and a `LIMIT` on
+  exploratory queries.
+- What the agent reads goes to its model provider, under your organization's
+  agreement with that provider, and the provider may process it outside the
+  region your dataset is in. Before the agent reads patient-level rows, check
+  that the agreement covers health data and the features the agent uses.
 
 ---
 
