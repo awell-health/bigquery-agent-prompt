@@ -52,12 +52,16 @@ Code session:
 /plugin install bigquery-data@careops-skills
 ```
 
-The install command opens the plugin's details: choose **Install for you** to
-have it in every project. The skill then runs as
-`/bigquery-data:bigquery-agent-prompt`, and Claude also loads it on its own for a
-question about Awell's BigQuery data. Claude Code doesn't update the plugin
-until you turn on auto-update: in `/plugin`, open **Marketplaces**, select
-`careops-skills` and choose **Enable auto-update**.
+The install command opens the plugin's details. Choose **Install for you** to
+have the plugin in every project.
+
+Claude then loads the skill on its own for a question about Awell's BigQuery
+data. To run it by name, use `/bigquery-data:bigquery-agent-prompt`.
+
+Claude Code leaves auto-update off for marketplaces other than Anthropic's. To
+turn it on, run `/plugin`, open **Marketplaces**, select `careops-skills` and
+choose **Enable auto-update**. To update by hand instead, run
+`/plugin marketplace update careops-skills`.
 
 To skip the plugin system, clone the repository into a skills directory
 instead. The folder name must match the skill's name:
@@ -145,9 +149,10 @@ to ask:
 [`PROMPT.md`](./PROMPT.md) is the column-level reference. The
 [Data schema](https://docs.awellhealth.com/docs/data/data-schema) page explains
 the model behind it. When the data model changes, update `PROMPT.md`. Every push
-to `main` republishes `bigquery-agent-prompt.zip` as the latest release.
+to `main` that changes `SKILL.md` or `PROMPT.md` republishes
+`bigquery-agent-prompt.zip` as the latest release.
 
 The plugin manifest, [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json),
 loads this folder as the plugin's one skill. It sets no `version`, so the plugin's
-version is the commit: a push to `main` reaches Claude Code users at their next
+version is the commit. Any push to `main` reaches Claude Code users at their next
 update.
