@@ -1,0 +1,56 @@
+# Publishes the skill as a ZIP that claude.ai and the Claude desktop app can upload.
+#
+# Their upload refuses a ZIP whose folder isn't named after the skill, and GitHub's own
+# "Download ZIP" names the folder after the branch (bigquery-agent-prompt-main). So a push
+# to main that changes the skill builds bigquery-agent-prompt.zip, holding
+# bigquery-agent-prompt/SKILL.md and bigquery-agent-prompt/PROMPT.md, and publishes it as
+# the latest release. The README links to releases/latest/download/bigquery-agent-prompt.zip.
+#
+# Customers upload this ZIP into agents that can query their data, so it is built from main
+# only: a manual run from any other branch does nothing.
+name: Package the skill
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - SKILL.md
+      - PROMPT.md
+      - .github/workflows/package-skill.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time, in push order, so an older commit can't end up as the latest.
+concurrency:
+  group: package-skill
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build bigquery-agent-prompt.zip
+        run: |
+          mkdir -p dist/bigquery-agent-prompt
+          cp SKILL.md PROMPT.md dist/bigquery-agent-prompt/
+          cd dist
+          zip -r bigquery-agent-prompt.zip bigquery-agent-prompt
+
+      - name: Publish it as the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="skill-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          gh release create "$tag" dist/bigquery-agent-prompt.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes "The skill as of ${GITHUB_SHA::7}. Upload bigquery-agent-prompt.zip as it is: see the README." \
+            --latest

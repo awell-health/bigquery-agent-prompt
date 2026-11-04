@@ -1,88 +1,132 @@
 # BigQuery Agent Prompt
 
-Prompt instructions and context for writing accurate, efficient BigQuery SQL
-against Awell's data model. It helps humans and AI agents understand our schema,
-tables, and relationships and turn natural-language questions into SQL.
+An [Agent Skill](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
+that teaches an AI agent Awell's BigQuery data model. With it, an agent can turn a
+question about care flow data into SQL, run it if it can reach BigQuery, and
+explain the answer.
 
-This repo is packaged as an **[Agent Skill](https://code.claude.com/docs/en/skills)**
-(`SKILL.md`), so you can install it in one command instead of copy-pasting a
-prompt:
+The skill is two files: [`SKILL.md`](./SKILL.md) tells the agent when to use it
+and the rules that always apply, and [`PROMPT.md`](./PROMPT.md) describes the
+tables and their columns, with worked queries. It holds no data.
+
+---
+
+## Before you start
+
+- **Access to your organization's Awell BigQuery dataset.** See
+  [Get access to BigQuery](https://docs.awellhealth.com/docs/data/getting-access).
+- **The project and dataset names.** The skill asks for them before it writes a
+  query. If you don't have them, ask
+  [support@awellhealth.com](mailto:support@awellhealth.com).
+
+---
+
+## Install it in Claude
+
+### claude.ai and the Claude desktop app
+
+1. Download
+   [`bigquery-agent-prompt.zip`](https://github.com/awell-health/bigquery-agent-prompt/releases/latest/download/bigquery-agent-prompt.zip)
+   from the latest release. Upload it as it is: the folder inside it must keep
+   the skill's name.
+2. Check that **Code execution and file creation** is on, under
+   **Settings > Capabilities**: skills need it. On a Team or Enterprise plan,
+   an owner controls it, and on Enterprise an owner also has to allow skills,
+   under **Organization settings > Plugins & skills**.
+3. Open **Customize > Skills**, select **+**, then **Create skill** and
+   **Upload a skill**, and choose the ZIP.
+4. Turn the skill on in the list.
+
+On a Team or Enterprise plan, an owner can provision the skill for every member
+of the organization instead. See
+[Use skills in Claude](https://support.claude.com/en/articles/12512180-using-skills-in-claude).
+
+### Claude Code
+
+Clone the repository into a skills directory. The folder name must match the
+skill's name:
+
+```bash
+# for every project
+git clone https://github.com/awell-health/bigquery-agent-prompt ~/.claude/skills/bigquery-agent-prompt
+
+# or for one project, from its root
+git clone https://github.com/awell-health/bigquery-agent-prompt .claude/skills/bigquery-agent-prompt
+```
+
+`git pull` in that folder picks up later changes.
+
+If you uploaded the skill on claude.ai, skip the clone: a recent Claude Code,
+signed in with the same Claude account (not an API key), loads it from there.
+
+---
+
+## Use it with another agent
+
+If the agent supports Agent Skills (Codex and Cursor, for instance), install it
+with [`skills`](https://github.com/vercel-labs/skills), an open-source CLI that
+detects the agent and puts the files where it expects them:
 
 ```bash
 npx skills add https://github.com/awell-health/bigquery-agent-prompt
 ```
 
-It works with Claude Code, the Claude apps, the Agent SDK, and other agents. The
-full schema and query patterns live in [`PROMPT.md`](./PROMPT.md).
+If it doesn't, give it the contents of [`PROMPT.md`](./PROMPT.md) as context,
+for example as its system prompt or a project instruction file, then ask your
+question.
 
 ---
 
-## 🎯 Purpose
+## Running the queries
 
-To enable humans and AI agents to:
+The skill writes SQL. To run it, the agent needs its own way into BigQuery:
 
-- Understand our BigQuery schema, tables, and relationships.
-- Write efficient, correct, and well-structured SQL queries.
-- Answer natural-language questions about our data.
-
----
-
-## 🧠 Use it as a Skill (recommended)
-
-Install it with [`skills`](https://github.com/vercel-labs/skills), the open
-agent-skills CLI (supports Claude Code, Codex, Cursor, and many more):
-
-```bash
-# add to the current project → ./.claude/skills/
-npx skills add https://github.com/awell-health/bigquery-agent-prompt
-
-# or install for every project → ~/.claude/skills/
-npx skills add https://github.com/awell-health/bigquery-agent-prompt -g
-```
-
-`skills` auto-detects your agent and installs `SKILL.md` along with the bundled
-[`PROMPT.md`](./PROMPT.md) reference. Then just ask a data question — e.g.
-*"How many active care flows does customer `example_clinic` have in production?"* — and
-your agent loads the skill automatically based on its description.
-
-<details>
-<summary>Manual install (no CLI)</summary>
-
-Clone this repo into a skills directory so the folder name matches the skill
-name (`bigquery-agent-prompt`):
-
-```bash
-git clone https://github.com/awell-health/bigquery-agent-prompt \
-  .claude/skills/bigquery-agent-prompt        # project scope
-# or ~/.claude/skills/bigquery-agent-prompt   # user scope
-```
-
-For the Claude apps, Agent SDK, and other tools, see the
-[Agent Skills documentation](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview).
-
-</details>
+- **In Claude Code or another agent with a terminal:** the `bq` command-line
+  tool from the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install),
+  signed in with the Google account that has access.
+- **Through a BigQuery connector** (an MCP server), if your organization uses
+  one.
+- **Without either:** copy the query into BigQuery Studio and give the agent the
+  result.
 
 ---
 
-## 📋 Use it as a plain prompt (legacy)
+## Try it
 
-If your tool doesn't support skills, copy the contents of
-[`PROMPT.md`](./PROMPT.md) into your AI assistant as **context**, then fire away.
+Name the project and dataset in your first question, so the skill doesn't have
+to ask:
 
----
-
-## 📦 What's inside
-
-- **`SKILL.md`** — the skill entry point: when to use it plus the always-on
-  rules (project + customer, table reference format, realtime views, the
-  `patient_data` tables).
-- **`PROMPT.md`** — the canonical reference the skill reads: full terminology,
-  table-by-table schema, and worked query patterns.
+- *"In awell-production, dataset `example_clinic`: how many care flows started
+  last month, per care flow definition?"*
+- *"How many patients completed the post-operative follow-up care flow in the
+  last 90 days, and how long did it take them, on average?"*
+- *"Which forms do patients leave open the longest before completing them?"*
+- *"What share of patients in the weight management care flow lost at least
+  5% of their first recorded weight?"*
 
 ---
 
-## 🔄 Keeping it accurate
+## Your data
 
-The table schemas mirror the published
-[BigQuery data schema](https://developers.awellhealth.com/awell-orchestration/docs/data/bigquery/data-schema).
-When the data model changes, update `PROMPT.md` to match.
+- The skill is instructions and a description of the tables. It contains no
+  data and sends nothing to Awell.
+- The agent's queries run in BigQuery with the access you give it, and only
+  the rows a query returns reach the agent. The access Awell provisions, for
+  BigQuery Studio or as a read-only service account, is enough.
+- The skill tells the agent to read as little patient data as the question
+  needs: counts and averages rather than patient-level rows, no names,
+  contact details or identifiers unless you ask for them, and a `LIMIT` on
+  exploratory queries.
+- What the agent reads goes to its model provider, under your organization's
+  agreement with that provider, and the provider may process it outside the
+  region your dataset is in. Before the agent reads patient-level rows, check
+  that the agreement covers health data and the features the agent uses.
+
+---
+
+## Keeping it accurate
+
+[`PROMPT.md`](./PROMPT.md) is the column-level reference. The
+[Data schema](https://docs.awellhealth.com/docs/data/data-schema) page explains
+the model behind it. When the data model changes, update `PROMPT.md`. Every push
+to `main` republishes `bigquery-agent-prompt.zip` as the latest release.
