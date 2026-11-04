@@ -153,6 +153,8 @@ to `main` that changes `SKILL.md` or `PROMPT.md` republishes
 `bigquery-agent-prompt.zip` as the latest release.
 
 The plugin manifest, [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json),
-loads this folder as the plugin's one skill. It sets no `version`, so the plugin's
-version is the commit. Any push to `main` reaches Claude Code users at their next
-update.
+loads this folder as the plugin's one skill. Claude Code users get the commit that
+careops-skills pins, not the latest one here: a change merged to `main` reaches
+them when a pull request there moves the pin. See
+[Releasing a new skill version](https://github.com/awell-health/careops-skills#releasing-a-new-skill-version).
+The manifest sets no `version`, so the plugin's version is the pinned commit.
