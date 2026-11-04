@@ -1,0 +1,13 @@
+{
+  "name": "bigquery-data",
+  "description": "Teaches Claude Awell's BigQuery data model, so it can answer questions about care flow data by writing SQL.",
+  "author": {
+    "name": "Awell Health",
+    "url": "https://awellhealth.com"
+  },
+  "homepage": "https://docs.awellhealth.com/docs/data/analyze-data-with-an-ai-agent",
+  "repository": "https://github.com/awell-health/bigquery-agent-prompt",
+  "license": "Apache-2.0",
+  "keywords": ["awell", "bigquery", "sql", "care flows", "data"],
+  "skills": "./"
+}

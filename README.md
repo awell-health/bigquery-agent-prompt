@@ -43,8 +43,28 @@ of the organization instead. See
 
 ### Claude Code
 
-Clone the repository into a skills directory. The folder name must match the
-skill's name:
+Install it as the `bigquery-data` plugin from Awell's plugin marketplace,
+[careops-skills](https://github.com/awell-health/careops-skills). In a Claude
+Code session:
+
+```text
+/plugin marketplace add awell-health/careops-skills
+/plugin install bigquery-data@careops-skills
+```
+
+The install command opens the plugin's details. Choose **Install for you** to
+have the plugin in every project.
+
+Claude then loads the skill on its own for a question about Awell's BigQuery
+data. To run it by name, use `/bigquery-data:bigquery-agent-prompt`.
+
+Claude Code leaves auto-update off for marketplaces other than Anthropic's. To
+turn it on, run `/plugin`, open **Marketplaces**, select `careops-skills` and
+choose **Enable auto-update**. To update by hand instead, run
+`/plugin marketplace update careops-skills`.
+
+To skip the plugin system, clone the repository into a skills directory
+instead. The folder name must match the skill's name:
 
 ```bash
 # for every project
@@ -56,8 +76,8 @@ git clone https://github.com/awell-health/bigquery-agent-prompt .claude/skills/b
 
 `git pull` in that folder picks up later changes.
 
-If you uploaded the skill on claude.ai, skip the clone: a recent Claude Code,
-signed in with the same Claude account (not an API key), loads it from there.
+If you uploaded the skill on claude.ai, skip both: a recent Claude Code, signed
+in with the same Claude account (not an API key), loads it from there.
 
 ---
 
@@ -129,4 +149,12 @@ to ask:
 [`PROMPT.md`](./PROMPT.md) is the column-level reference. The
 [Data schema](https://docs.awellhealth.com/docs/data/data-schema) page explains
 the model behind it. When the data model changes, update `PROMPT.md`. Every push
-to `main` republishes `bigquery-agent-prompt.zip` as the latest release.
+to `main` that changes `SKILL.md` or `PROMPT.md` republishes
+`bigquery-agent-prompt.zip` as the latest release.
+
+The plugin manifest, [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json),
+loads this folder as the plugin's one skill. Claude Code users get the commit that
+careops-skills pins, not the latest one here: a change merged to `main` reaches
+them when a pull request there moves the pin. See
+[Releasing a new skill version](https://github.com/awell-health/careops-skills#releasing-a-new-skill-version).
+The manifest sets no `version`, so the plugin's version is the pinned commit.
