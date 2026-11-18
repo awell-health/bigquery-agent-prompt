@@ -62,6 +62,42 @@ FROM `awell-production.example_clinic.data_points_realtime`
 
 Pattern: `{project}.{customer}.{table}_realtime`
 
+## Data Workbench object views
+
+Alongside the fixed tables below, each customer dataset also holds **Data Workbench object views** — one view per installed object, generated from the customer's own object model. Unlike the tables below, their names and columns are **per-customer and change over time**, so they are a convention to follow rather than a fixed schema to memorise.
+
+- **Naming:** `{project}.{customer}.object_<object_key>` — e.g. `object_encounter`, `object_patient`, `object_location`. One view per installed object; **one row per record**.
+- **Discover what exists** (do this before querying, since the set differs per customer):
+  ```sql
+  -- installed object views in a customer dataset
+  SELECT table_name
+  FROM `{project}.{customer}.INFORMATION_SCHEMA.VIEWS`
+  WHERE STARTS_WITH(table_name, 'object_');
+  ```
+  Every column carries an `OPTIONS(description = ...)` naming the field, its type, and — for a reference — the object types it targets; read them from `INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`, or read the object model from the internal catalog `awell-<env>.internal.workbench_objects__snapshot`.
+
+**Fixed columns every object view has:**
+
+| Column | Meaning |
+|---|---|
+| `id` | The record's bare id, unique within the object. |
+| `ref` | `<object_key>/<id>` — the id with its object, which disambiguates a reference that can point at several object types. |
+| `object_key` | The object this row is stored under. A subtype folded into a core object's view keeps its OWN key here. |
+| `patient_id` | Present only on patient-scoped objects; joins `patients.id`. |
+| *(field columns)* | One typed column per object field (see below), then... |
+| `version` | Record version. |
+| `effective_at` | Latest write date for the record. |
+
+**Field columns** are typed from the object model: scalars are native types, a `coding` field is a `STRUCT<system, code, display>`, anything exotic is `JSON`, and an `is_many` field is an `ARRAY` of its element type.
+
+**Reference columns** hold the **bare id** of the target record (any `<object>/` prefix is stripped). Join a reference to the target view's `id`:
+```sql
+SELECT e.id, o.* 
+FROM `{project}.{customer}.object_encounter` AS e
+JOIN `{project}.{customer}.object_organization` AS o ON o.id = e.service_provider
+```
+A reference may target **several** object types (its column description lists them, e.g. `-> practitioner | organization`). When it does, the bare id alone does not say which object it is — resolve it against each target view's `id`, or match it against a target view's `ref`. An `is_many` reference is an `ARRAY` of bare ids — `UNNEST` it before joining. A warehouse-wide check (`workbench_reference_integrity`) asserts that every reference resolves to a real target record.
+
 # Tables
 
 ## Activities
